@@ -371,6 +371,24 @@ fn prompt(msg: &str) -> String {
     s.trim().to_string()
 }
 
+// 编辑命令:预填当前命令供用户就地修改(readline);失败则回退普通输入
+fn edit_line(msg: &str, current: &str) -> String {
+    match rustyline::DefaultEditor::new() {
+        Ok(mut rl) => match rl.readline_with_initial(msg, (current, "")) {
+            Ok(line) => line.trim().to_string(),
+            Err(_) => current.to_string(), // Ctrl-C/D:保留原命令
+        },
+        Err(_) => {
+            let s = prompt(msg);
+            if s.is_empty() {
+                current.to_string()
+            } else {
+                s
+            }
+        }
+    }
+}
+
 fn scan_danger(cmd: &str) -> Vec<&'static str> {
     let norm: String = cmd
         .to_lowercase()
@@ -863,14 +881,14 @@ fn process(input: &str, cfg: &HashMap<String, String>, dry: bool, context: &str)
         })
         .to_lowercase();
         if a == "e" {
-            let ed = prompt(if zh {
-                "编辑命令: "
-            } else {
-                "Edit command: "
-            });
-            if !ed.is_empty() {
-                final_cmd = ed;
-            }
+            final_cmd = edit_line(
+                if zh {
+                    "编辑命令: "
+                } else {
+                    "Edit command: "
+                },
+                &final_cmd,
+            );
         } else if a != "y" && a != "yes" {
             println!("{}", if zh { "已取消。" } else { "Cancelled." });
             return;
@@ -882,14 +900,14 @@ fn process(input: &str, cfg: &HashMap<String, String>, dry: bool, context: &str)
             "Enter to run / e to edit / any key cancels: "
         });
         if a == "e" {
-            let ed = prompt(if zh {
-                "编辑命令: "
-            } else {
-                "Edit command: "
-            });
-            if !ed.is_empty() {
-                final_cmd = ed;
-            }
+            final_cmd = edit_line(
+                if zh {
+                    "编辑命令: "
+                } else {
+                    "Edit command: "
+                },
+                &final_cmd,
+            );
         } else if !a.is_empty() {
             println!("{}", if zh { "已取消。" } else { "Cancelled." });
             return;

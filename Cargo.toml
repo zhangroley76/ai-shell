@@ -17,6 +17,7 @@ path = "src/main.rs"
 [dependencies]
 ureq = { version = "2", default-features = false, features = ["json"] }
 serde_json = "1"
+rustyline = { version = "14", default-features = false }
 
 [profile.release]
 opt-level = "z"

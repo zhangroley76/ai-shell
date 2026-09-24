@@ -37,7 +37,7 @@ It's not just a command generator — it's a **learning tool**. It reads the *re
 - 🔀 **Multiple backends** — local Ollama, Claude CLI, Codex CLI, or any OpenAI-compatible cloud API. Switch per-call or set a default.
 - 🌍 **Follows your language** — ask in English, get English; ask in Chinese, get Chinese.
 - 💬 **Interactive mode** — `ai -i` for a learning REPL with follow-up questions.
-- 🦀 **Single static binary** — written in Rust, ~750 KB, two tiny dependencies, no runtime needed.
+- 🦀 **Single static binary** — written in Rust, ~1 MB, tiny dependency set, no runtime needed.
 
 ## Install
 
@@ -203,7 +203,7 @@ Only the model inference talks to a backend; command execution and doc reading h
 
 ## Contributing
 
-Issues and PRs welcome. The whole tool is a single `src/main.rs` (~400 lines) with two dependencies — easy to read and hack on.
+Issues and PRs welcome. The whole tool is a single `src/main.rs` (~500 lines) — easy to read and hack on.
 
 ## License
 
