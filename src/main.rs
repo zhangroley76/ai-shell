@@ -689,7 +689,9 @@ fn process(input: &str, cfg: &HashMap<String, String>, dry: bool, context: &str)
         }
     };
     if std::env::var("AI_DEBUG").is_ok() {
-        eprintln!("\x1b[2m[debug] raw model output:\n{raw:?}\x1b[0m");
+        let dbg = format!("[debug] backend={} raw={raw:?}\n", backend_name(cfg));
+        eprint!("\x1b[1;35m{dbg}\x1b[0m");
+        let _ = std::fs::write("/tmp/ai_debug.txt", &dbg);
     }
 
     // ANSWER:直接答  HELP:读文档  EXPLAIN:拆命令  CLARIFY:澄清  CMD:生成
