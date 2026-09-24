@@ -149,50 +149,46 @@ fn backend_name(cfg: &HashMap<String, String>) -> String {
     }
 }
 
-// 调用本地 CLI(claude/codex),合并 system+user 为一个 prompt,过滤噪音
+// 调用本地 CLI(claude/codex),合并 system+user 为一个 prompt
 fn call_cli(tool: &str, system: &str, user: &str) -> Result<String, String> {
     let full = if system.is_empty() {
         user.to_string()
     } else {
         format!("{system}\n\n{user}")
     };
-    // 喂空 stdin:避免 claude/codex 等待 stdin(3秒警告 + 污染输出)
-    let mut c = match tool {
-        "claude" => {
-            let mut c = Command::new("claude");
-            c.arg("-p").arg(&full);
-            c
-        }
-        "codex" => {
-            let mut c = Command::new("codex");
-            c.arg("exec").arg(&full);
-            c
-        }
-        _ => return Err("unknown CLI".into()),
-    };
-    let output = c
-        .stdin(std::process::Stdio::null())
-        .output()
-        .map_err(|e| format!("failed to run {tool}: {e}"))?;
-    let raw = String::from_utf8_lossy(&output.stdout);
-    if tool == "codex" {
-        // 过滤 codex 的 hook/tokens/codex 等噪音行,取实质内容
-        let noise = ["hook:", "tokens used", "codex", "user", "thinking"];
-        let lines: Vec<&str> = raw
-            .lines()
-            .filter(|l| {
-                let t = l.trim();
-                !t.is_empty()
-                    && !t.chars().all(|c| c.is_ascii_digit() || c == ',')
-                    && !noise
-                        .iter()
-                        .any(|n| t.eq_ignore_ascii_case(n) || t.starts_with(n))
-            })
-            .collect();
-        Ok(lines.join("\n").trim().to_string())
-    } else {
-        Ok(raw.trim().to_string())
+    if tool == "claude" {
+        // claude -p 直接输出回答;喂空 stdin 避免 3s 警告
+        let output = Command::new("claude")
+            .arg("-p")
+            .arg(&full)
+            .stdin(std::process::Stdio::null())
+            .output()
+            .map_err(|e| format!("failed to run claude: {e}"))?;
+        return Ok(String::from_utf8_lossy(&output.stdout).trim().to_string());
     }
+    if tool == "codex" {
+        // codex exec 是完整 agent 会话(带头部/hook/exec 噪音);
+        // 用 --output-last-message 把最终回答单独写到文件,只读那个
+        let mut path = std::env::temp_dir();
+        path.push(format!("ai_codex_{}.txt", std::process::id()));
+        let status = Command::new("codex")
+            .arg("exec")
+            .arg("--output-last-message")
+            .arg(&path)
+            .arg(&full)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map_err(|e| format!("failed to run codex: {e}"))?;
+        let msg = std::fs::read_to_string(&path).unwrap_or_default();
+        let _ = std::fs::remove_file(&path);
+        if msg.trim().is_empty() && !status.success() {
+            return Err("codex returned no message".into());
+        }
+        return Ok(msg.trim().to_string());
+    }
+    Err("unknown CLI".into())
 }
 
 fn call(system: &str, user: &str, cfg: &HashMap<String, String>) -> Result<String, String> {
