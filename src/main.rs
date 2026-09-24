@@ -167,26 +167,61 @@ fn call_cli(tool: &str, system: &str, user: &str) -> Result<String, String> {
         return Ok(String::from_utf8_lossy(&output.stdout).trim().to_string());
     }
     if tool == "codex" {
-        // codex exec 是完整 agent 会话(带头部/hook/exec 噪音);
-        // 用 --output-last-message 把最终回答单独写到文件,只读那个
-        let mut path = std::env::temp_dir();
-        path.push(format!("ai_codex_{}.txt", std::process::id()));
-        let status = Command::new("codex")
+        // codex exec 是完整 agent 会话(头部/hook/exec/token 噪音)。
+        // 最终回答位于 "codex" 标记行之后、下一个 "hook:"/"tokens used" 行之前。
+        let output = Command::new("codex")
             .arg("exec")
-            .arg("--output-last-message")
-            .arg(&path)
             .arg(&full)
             .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
-            .status()
+            .output()
             .map_err(|e| format!("failed to run codex: {e}"))?;
-        let msg = std::fs::read_to_string(&path).unwrap_or_default();
-        let _ = std::fs::remove_file(&path);
-        if msg.trim().is_empty() && !status.success() {
-            return Err("codex returned no message".into());
+        let raw = String::from_utf8_lossy(&output.stdout);
+        let lines: Vec<&str> = raw.lines().collect();
+        // 取最后一个 "codex" 标记之后的消息块
+        if let Some(i) = lines.iter().rposition(|l| l.trim() == "codex") {
+            let mut msg = String::new();
+            for l in &lines[i + 1..] {
+                let t = l.trim();
+                if t.starts_with("hook:") || t == "tokens used" {
+                    break;
+                }
+                msg.push_str(l);
+                msg.push('\n');
+            }
+            let msg = msg.trim();
+            if !msg.is_empty() {
+                return Ok(msg.to_string());
+            }
         }
-        return Ok(msg.trim().to_string());
+        // 回退:滤掉已知噪音行,取剩余内容
+        let noise = [
+            "hook:",
+            "tokens used",
+            "exec",
+            "workdir:",
+            "model:",
+            "provider:",
+            "approval:",
+            "sandbox:",
+            "reasoning ",
+            "session id:",
+            "--------",
+            "Reading additional input",
+            "OpenAI Codex",
+            "user",
+            "codex",
+        ];
+        let rest: Vec<&str> = raw
+            .lines()
+            .map(|l| l.trim())
+            .filter(|t| {
+                !t.is_empty()
+                    && !t.chars().all(|c| c.is_ascii_digit() || c == ',')
+                    && !noise.iter().any(|n| t.starts_with(n))
+            })
+            .collect();
+        return Ok(rest.join("\n").trim().to_string());
     }
     Err("unknown CLI".into())
 }
