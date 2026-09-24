@@ -18,6 +18,8 @@
   <a href="#license">License</a>
 </p>
 
+<p align="center">English · <a href="README.zh-CN.md">简体中文</a></p>
+
 ---
 
 ## Why ai-shell?
