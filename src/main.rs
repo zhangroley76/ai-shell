@@ -734,13 +734,16 @@ fn process(input: &str, cfg: &HashMap<String, String>, dry: bool, context: &str)
         return;
     }
 
-    // CMD 分支:解析 CMD: 和 DESC:
+    // CMD 分支:解析 CMD: 和 DESC:(容忍缩进/markdown 符号)
     let mut cmd = String::new();
     let mut desc = String::new();
     for line in raw.lines() {
-        if let Some(s) = line.strip_prefix("CMD:") {
+        let l = line
+            .trim_start_matches(['#', '*', '-', '>', ' ', '\t'])
+            .trim();
+        if let Some(s) = l.strip_prefix("CMD:") {
             cmd = s.trim().to_string();
-        } else if let Some(s) = line.strip_prefix("DESC:") {
+        } else if let Some(s) = l.strip_prefix("DESC:") {
             desc = s.trim().to_string();
         }
     }
