@@ -41,29 +41,69 @@
 
 ## 安装
 
-### 从源码编译(推荐)
+支持 **Linux 和 macOS**。
 
-需要 [Rust 工具链](https://rustup.rs)(`cargo`)。
+### 方式 A — 一键安装脚本(推荐)
 
-```bash
-git clone https://github.com/zhangroley76/ai-shell.git
-cd ai-shell
-cargo build --release
-install -Dm755 target/release/ai ~/.local/bin/ai
-```
-
-支持 Linux 和 macOS(Rust 跨平台;讲解读取的是你本机系统的 man 文档)。
-
-### 配置后端
-
-默认后端是**本地 Ollama** 模型。安装 Ollama 并拉取模型:
+自动检测/安装 Rust、从源码编译、安装 `ai` 命令,并引导你选择后端:
 
 ```bash
-# https://ollama.com
-ollama pull qwen3:14b        # ai-shell 默认使用的模型
+curl -fsSL https://raw.githubusercontent.com/zhangroley76/ai-shell/main/install.sh | bash
 ```
 
-> 没有显卡?改用 `--claude` / `--codex` 后端(见 [后端](#后端)),无需本地模型。
+或在克隆的仓库里运行:`git clone https://github.com/zhangroley76/ai-shell.git && cd ai-shell && ./install.sh`
+
+### 方式 B — 手动编译
+
+1. **安装 Rust**(如果还没有 `cargo`):
+
+   ```bash
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   source "$HOME/.cargo/env"      # 或直接开一个新终端
+   ```
+
+   > macOS 上也可以 `brew install rust`(注意是 `rust`,**不要加 `--cask`**)。
+
+2. **编译:**
+
+   ```bash
+   git clone https://github.com/zhangroley76/ai-shell.git
+   cd ai-shell
+   cargo build --release
+   ```
+
+3. **放到 PATH:**
+
+   ```bash
+   # Linux(或 macOS 且 ~/.local/bin 在 PATH 中):
+   install -Dm755 target/release/ai ~/.local/bin/ai
+   # …或系统级(到处都能用,会要密码):
+   sudo install -m755 target/release/ai /usr/local/bin/ai
+   ```
+
+4. **验证:**
+
+   ```bash
+   ai --version      # → ai (ai-shell) 1.0.0
+   ```
+
+### 选择后端
+
+ai-shell 需要一个模型来对话。选一个(安装脚本会帮你配好;手动配置就创建 `~/.config/ai/config`):
+
+| 你的情况 | 后端 | 配置 |
+|---|---|---|
+| **有显卡** | 本地 Ollama(免费、私密) | `endpoint = http://127.0.0.1:11434`<br>然后 `ollama pull qwen3:14b` |
+| **笔记本/无显卡,装了 Claude Code** | Claude CLI | `backend = claude` |
+| **装了 Codex** | Codex CLI | `backend = codex` |
+| **想用云端 API** | OpenAI 兼容 | 见 [配置](#配置) |
+
+```bash
+# 例:无显卡的笔记本,用你已有的 Claude Code 登录态
+mkdir -p ~/.config/ai && echo "backend = claude" > ~/.config/ai/config
+```
+
+> 既没显卡又没 Claude/Codex?装 [Ollama](https://ollama.com)(也能纯 CPU 跑,只是慢些),或让 ai-shell 通过局域网/SSH 隧道连一台远程 Ollama(见 [配置](#配置))。
 
 ## 用法
 

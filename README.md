@@ -41,30 +41,69 @@ It's not just a command generator — it's a **learning tool**. It reads the *re
 
 ## Install
 
-### From source (recommended)
+Works on **Linux and macOS**.
 
-Requires a [Rust toolchain](https://rustup.rs) (`cargo`).
+### Option A — one-line installer (recommended)
 
-```bash
-git clone https://github.com/zhangroley76/ai-shell.git
-cd ai-shell
-cargo build --release
-# put it on your PATH
-install -Dm755 target/release/ai ~/.local/bin/ai
-```
-
-Works on Linux and macOS (Rust is cross-platform; explanations read your OS's own man pages).
-
-### Set up a backend
-
-The default backend is a **local Ollama** model. Install Ollama and pull a model:
+Detects/installs Rust, builds from source, installs the `ai` binary, and helps you pick a backend:
 
 ```bash
-# https://ollama.com
-ollama pull qwen3:14b        # default model expected by ai-shell
+curl -fsSL https://raw.githubusercontent.com/zhangroley76/ai-shell/main/install.sh | bash
 ```
 
-> Don't have a GPU? Use the `--claude` / `--codex` backends instead (see [Backends](#backends)) — no local model needed.
+Or from a cloned repo: `git clone https://github.com/zhangroley76/ai-shell.git && cd ai-shell && ./install.sh`
+
+### Option B — manual build
+
+1. **Install Rust** (if you don't have `cargo`):
+
+   ```bash
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   source "$HOME/.cargo/env"      # or just open a new terminal
+   ```
+
+   > On macOS you can also `brew install rust` (note: `rust`, **not** `--cask rust`).
+
+2. **Build:**
+
+   ```bash
+   git clone https://github.com/zhangroley76/ai-shell.git
+   cd ai-shell
+   cargo build --release
+   ```
+
+3. **Put it on your PATH:**
+
+   ```bash
+   # Linux (or macOS with ~/.local/bin on PATH):
+   install -Dm755 target/release/ai ~/.local/bin/ai
+   # …or system-wide (works everywhere, asks for your password):
+   sudo install -m755 target/release/ai /usr/local/bin/ai
+   ```
+
+4. **Verify:**
+
+   ```bash
+   ai --version      # → ai (ai-shell) 1.0.0
+   ```
+
+### Choose a backend
+
+ai-shell needs a model to talk to. Pick one (the installer sets this up for you; to do it manually, create `~/.config/ai/config`):
+
+| Your situation | Backend | Config |
+|---|---|---|
+| **Have a GPU** | Local Ollama (free, private) | `endpoint = http://127.0.0.1:11434`<br>then `ollama pull qwen3:14b` |
+| **Laptop / no GPU, have Claude Code** | Claude CLI | `backend = claude` |
+| **Have Codex** | Codex CLI | `backend = codex` |
+| **Prefer a cloud API** | OpenAI-compatible | see [Configuration](#configuration) |
+
+```bash
+# example: laptop without a GPU, using your existing Claude Code login
+mkdir -p ~/.config/ai && echo "backend = claude" > ~/.config/ai/config
+```
+
+> No GPU and no Claude/Codex? Install [Ollama](https://ollama.com) (it runs on CPU too, just slower), or point ai-shell at a remote Ollama over your LAN / an SSH tunnel (see [Configuration](#configuration)).
 
 ## Usage
 
