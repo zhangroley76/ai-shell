@@ -1,0 +1,2 @@
+
+An inode is a data structure in a Unix-like file system that stores metadata about a file or directory, such as its size, ownership, permissions, and location on the disk. Each file and directory has a unique inode number, which is used by the system to identify and manage the file. Inodes do not store the file name or the actual data of the file, but they contain pointers to the data blocks where the file's content is stored.

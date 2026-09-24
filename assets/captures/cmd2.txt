@@ -1,0 +1,18 @@
+
+[0;32mtar[0m is a utility for archiving files into a single file (called an archive) and extracting them later. It is commonly used for backup, distribution, and compression.
+
+Common options:
+- [0;32m-c[0m Create a new archive.
+- [0;32m-x[0m Extract files from an archive.
+- [0;32m-t[0m List the contents of an archive.
+- [0;32m-f[0m Specify the archive file name.
+- [0;32m-v[0m Be verbose (show progress).
+- [0;32m-z[0m Compress the archive with gzip.
+- [0;32m-j[0m Compress the archive with bzip2.
+- [0;32m-C[0m Change to a specific directory before processing files.
+
+Examples:
+[0;32m[0m[0;32m[0m
+tar [1;36m-cvf[0m archive.tar /path/to/directory
+tar [1;36m-xvf[0m archive.tar
+[0;32m[0m[0;32m[0m

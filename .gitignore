@@ -1,0 +1,8 @@
+/target
+Cargo.lock
+# local config & credentials — never commit
+config
+.config/
+*.log
+# demo scratch
+assets/demo-sandbox/

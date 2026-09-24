@@ -1,0 +1,20 @@
+# ai-shell configuration — copy to ~/.config/ai/config and edit.
+# All fields are optional; defaults connect to a local Ollama instance.
+
+# ---- Local backend (default) ----
+endpoint = http://127.0.0.1:11434
+
+# ---- Default backend selection ----
+# One of: local | claude | codex | cloud
+# backend = local
+
+# ---- Cloud backend (OpenAI-compatible), used when backend=cloud or a key is set ----
+# cloud_url   = https://api.deepseek.com/v1/chat/completions
+# cloud_key   = sk-your-key-here
+# cloud_model = deepseek-chat
+
+# ---- Reaching a remote Ollama over the LAN (optional) ----
+# endpoint = http://192.168.1.100:11434
+# If that Ollama is behind HTTP Basic auth:
+# user     = someuser
+# password = somepass

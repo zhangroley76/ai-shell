@@ -1,0 +1,30 @@
+🛠  生成脚本中...
+
+[1;36m生成的脚本:[0m
+[2m──────────────────────────────────────────────────[0m
+#!/usr/bin/env bash
+set [1;36m-euo[0m pipefail
+
+FOLDER="/path/to/folder"
+
+if [ [1;36m-z[0m "$FOLDER" ]; then
+    echo "Folder path is not specified."
+    exit 1
+fi
+
+if [ ! [1;36m-d[0m "$FOLDER" ]; then
+    echo "Folder $FOLDER does not exist."
+    exit 1
+fi
+
+if [ "$FOLDER" == "/" ]; then
+    echo "Cannot delete files in root directory."
+    exit 1
+fi
+
+# Find and print cache files older than 7 days
+find "$FOLDER" [1;36m-type[0m f [1;36m-name[0m "*.cache" [1;36m-mtime[0m +7 [1;36m-print[0m
+
+# Uncomment the line below to actually delete the files
+# find "$FOLDER" [1;36m-type[0m f [1;36m-name[0m "*.cache" [1;36m-mtime[0m +7 [1;36m-delete[0m
+[2m──────────────────────────────────────────────────[0m

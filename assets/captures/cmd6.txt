@@ -1,0 +1,5 @@
+
+[1;36m建议命令:[0m
+  sudo pacman -S htop
+[2m  作用:Install htop, an interactive process viewer, using the Arch Linux package manager.[0m
+
