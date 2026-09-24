@@ -688,6 +688,9 @@ fn process(input: &str, cfg: &HashMap<String, String>, dry: bool, context: &str)
             return;
         }
     };
+    if std::env::var("AI_DEBUG").is_ok() {
+        eprintln!("\x1b[2m[debug] raw model output:\n{raw:?}\x1b[0m");
+    }
 
     // ANSWER:直接答  HELP:读文档  EXPLAIN:拆命令  CLARIFY:澄清  CMD:生成
     if let Some(a) = raw.strip_prefix("ANSWER:") {
@@ -758,6 +761,13 @@ fn process(input: &str, cfg: &HashMap<String, String>, dry: bool, context: &str)
             .trim()
             .to_string();
     }
+    // 去掉命令外层反引号(模型常把命令包在 `...` 里)
+    cmd = cmd
+        .trim()
+        .trim_start_matches('`')
+        .trim_end_matches('`')
+        .trim()
+        .to_string();
 
     println!(
         "\n\x1b[1;36m{}\x1b[0m\n  {cmd}",
