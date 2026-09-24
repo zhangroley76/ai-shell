@@ -225,12 +225,18 @@ fn call(system: &str, user: &str, cfg: &HashMap<String, String>) -> Result<Strin
         }
         out = out.trim_end_matches("```").trim().to_string();
     }
-    for p in ["ANSWER:", "EXPLAIN:", "CMD:"] {
-        if let Some(s) = out.strip_prefix(p) {
-            out = s.trim().to_string();
+    Ok(out.trim().to_string())
+}
+
+// 去掉二次调用(讲解/拆解/列举)结果里模型偶尔误加的路由前缀
+fn strip_markers(s: &str) -> String {
+    let mut t = s.trim();
+    for p in ["ANSWER:", "EXPLAIN:", "CMD:", "CLARIFY:"] {
+        if let Some(r) = t.strip_prefix(p) {
+            t = r.trim();
         }
     }
-    Ok(out.trim().to_string())
+    t.to_string()
 }
 
 fn fetch_help(cmd: &str) -> Option<String> {
@@ -484,7 +490,7 @@ fn do_help(name: &str, ask: &str, cfg: &HashMap<String, String>) {
         None => call(sys, &format!("{d}Concisely explain the `{name}` command: what it does, common options, and 1-2 examples. Wrap command examples in backticks."), cfg),
     }.unwrap_or_else(|e| format!("(failed: {e})"));
     println!();
-    print_colored(expl.trim());
+    print_colored(&strip_markers(&expl));
 }
 
 // 检测"列出本机某类命令/工具"意图(如"列出网络相关命令""有哪些压缩工具")
@@ -600,7 +606,7 @@ fn do_list_installed(input: &str, cfg: &HashMap<String, String>) {
     match call(sys, &prompt, cfg) {
         Ok(out) => {
             println!();
-            print_colored(out.trim());
+            print_colored(&strip_markers(&out));
         }
         Err(e) => eprintln!("{e}"),
     }
@@ -629,7 +635,7 @@ fn process(input: &str, cfg: &HashMap<String, String>, dry: bool, context: &str)
         let expl = call("You are a Linux assistant. No thinking aloud.", &format!("{}Break down and explain each part of this Linux command for a beginner. End with a one-line summary of what the whole command does. Wrap command fragments in backticks.\n\nCommand: {target}{help}", lang_directive(&target)), cfg)
             .unwrap_or_else(|e| format!("(failed: {e})"));
         println!();
-        print_colored(expl.trim());
+        print_colored(&strip_markers(&expl));
         return;
     }
     // 工具端识别"某命令用法":含用法词+已安装命令 → 直接读文档,不问模型认不认识(更稳)
@@ -693,7 +699,7 @@ fn process(input: &str, cfg: &HashMap<String, String>, dry: bool, context: &str)
         let expl = call("You are a Linux assistant. No thinking aloud.", &format!("{}Break down and explain each part of this Linux command for a beginner. End with a one-line summary of what the whole command does. Wrap command fragments in backticks.\n\nCommand: {target}{help}", lang_directive(target)), cfg)
             .unwrap_or_else(|e| format!("(failed: {e})"));
         println!();
-        print_colored(expl.trim());
+        print_colored(&strip_markers(&expl));
         return;
     }
     if let Some(c) = raw.strip_prefix("CLARIFY:") {
@@ -721,12 +727,12 @@ fn process(input: &str, cfg: &HashMap<String, String>, dry: bool, context: &str)
     }
     // 兜底:模型漏了 CMD: 前缀时,取第一个非 DESC 行作为命令
     if cmd.is_empty() {
-        // 若输出像"人话"(含中文句号/很长),当作 ANSWER 讲解,不当命令执行
-        let looks_prose =
-            raw.contains('。') || raw.chars().count() > 120 || raw.lines().count() > 4;
+        // 有 DESC 行说明这是命令响应,不当讲解;仅在既无 cmd 又无 desc 时才按"人话"处理
+        let looks_prose = desc.is_empty()
+            && (raw.contains('。') || raw.chars().count() > 120 || raw.lines().count() > 4);
         if looks_prose {
             println!();
-            print_colored(raw.trim());
+            print_colored(&strip_markers(&raw));
             return;
         }
         cmd = raw
