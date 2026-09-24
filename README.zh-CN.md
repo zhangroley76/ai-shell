@@ -89,9 +89,17 @@ curl -fsSL https://raw.githubusercontent.com/zhangroley76/ai-shell/main/install.
 
 ### 选择后端
 
-ai-shell 需要一个模型来对话。选一个(安装脚本会帮你配好;手动配置就创建 `~/.config/ai/config`):
+ai-shell 需要一个模型来对话。配置文件位于 **`~/.config/ai/config`**。
 
-| 你的情况 | 后端 | 配置 |
+> 一键安装脚本会帮你创建它。如果你是手动编译的,这个文件(以及 `~/.config/ai/` 目录)**还不存在 —— 需要先创建**:
+>
+> ```bash
+> mkdir -p ~/.config/ai        # 这个目录通常还不存在
+> ```
+
+选一个后端,写进上面那个文件:
+
+| 你的情况 | 后端 | 写入 `~/.config/ai/config` |
 |---|---|---|
 | **有显卡** | 本地 Ollama(免费、私密) | `endpoint = http://127.0.0.1:11434`<br>然后 `ollama pull qwen3:14b` |
 | **笔记本/无显卡,装了 Claude Code** | Claude CLI | `backend = claude` |
@@ -103,7 +111,20 @@ ai-shell 需要一个模型来对话。选一个(安装脚本会帮你配好;手
 mkdir -p ~/.config/ai && echo "backend = claude" > ~/.config/ai/config
 ```
 
+验证是否生效 —— 每次调用都会打印当前后端:
+
+```bash
+ai "什么是软链接"             # → 🤔 Thinking (Claude CLI)...
+```
+
+> 用 `backend = claude` / `codex` 需要对应 CLI 已安装(`which claude` / `which codex` 能查到)。
 > 既没显卡又没 Claude/Codex?装 [Ollama](https://ollama.com)(也能纯 CPU 跑,只是慢些),或让 ai-shell 通过局域网/SSH 隧道连一台远程 Ollama(见 [配置](#配置))。
+
+之后修改配置:
+
+```bash
+nano ~/.config/ai/config      # 或:vim / code / open -e(macOS)
+```
 
 ## 用法
 

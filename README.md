@@ -89,9 +89,17 @@ Or from a cloned repo: `git clone https://github.com/zhangroley76/ai-shell.git &
 
 ### Choose a backend
 
-ai-shell needs a model to talk to. Pick one (the installer sets this up for you; to do it manually, create `~/.config/ai/config`):
+ai-shell needs a model to talk to. The config file lives at **`~/.config/ai/config`**.
 
-| Your situation | Backend | Config |
+> The one-line installer creates it for you. If you built manually, this file (and its `~/.config/ai/` folder) **won't exist yet — create it**:
+>
+> ```bash
+> mkdir -p ~/.config/ai        # the folder usually doesn't exist yet
+> ```
+
+Pick a backend and write it to that file:
+
+| Your situation | Backend | Put this in `~/.config/ai/config` |
 |---|---|---|
 | **Have a GPU** | Local Ollama (free, private) | `endpoint = http://127.0.0.1:11434`<br>then `ollama pull qwen3:14b` |
 | **Laptop / no GPU, have Claude Code** | Claude CLI | `backend = claude` |
@@ -103,7 +111,20 @@ ai-shell needs a model to talk to. Pick one (the installer sets this up for you;
 mkdir -p ~/.config/ai && echo "backend = claude" > ~/.config/ai/config
 ```
 
+Verify it works — the backend in use is printed on every call:
+
+```bash
+ai "what is a symlink"        # → 🤔 Thinking (Claude CLI)...
+```
+
+> Using `backend = claude` / `codex` requires that CLI to be installed (`which claude` / `which codex`).
 > No GPU and no Claude/Codex? Install [Ollama](https://ollama.com) (it runs on CPU too, just slower), or point ai-shell at a remote Ollama over your LAN / an SSH tunnel (see [Configuration](#configuration)).
+
+To edit the config later:
+
+```bash
+nano ~/.config/ai/config      # or: vim / code / open -e (macOS)
+```
 
 ## Usage
 
