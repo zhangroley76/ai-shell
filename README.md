@@ -85,6 +85,7 @@ Or from a cloned repo: `git clone https://github.com/zhangroley76/ai-shell.git &
 
    ```bash
    ai --version      # → ai (ai-shell) 1.0.0
+   which ai          # confirm it resolves to the one you just installed (a stale `ai` earlier on PATH can shadow it)
    ```
 
 ### Choose a backend

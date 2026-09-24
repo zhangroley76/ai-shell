@@ -85,6 +85,7 @@ curl -fsSL https://raw.githubusercontent.com/zhangroley76/ai-shell/main/install.
 
    ```bash
    ai --version      # → ai (ai-shell) 1.0.0
+   which ai          # 确认跑的是你刚装的那个(PATH 里若有旧 ai 会顶替)
    ```
 
 ### 选择后端

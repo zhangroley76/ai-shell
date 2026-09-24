@@ -68,6 +68,14 @@ case ":$PATH:" in
      printf "    ${DIM}export PATH=\"%s:\$PATH\"${RST}\n" "$DEST";;
 esac
 
+# Warn if another `ai` earlier on PATH would shadow the one we just installed
+RESOLVED="$(command -v ai || true)"
+if [ -n "$RESOLVED" ] && [ "$RESOLVED" != "$DEST/ai" ]; then
+  warn "Another 'ai' is earlier on your PATH and will be used instead:"
+  printf "    ${DIM}%s${RST}\n" "$RESOLVED"
+  printf "  Remove it, or install over it:  ${DIM}install -m755 \"%s\" \"%s\"${RST}\n" "$BIN" "$RESOLVED"
+fi
+
 # --- 5. Pick a backend ---
 CFG_DIR="$HOME/.config/ai"; CFG="$CFG_DIR/config"
 if [ ! -f "$CFG" ]; then
