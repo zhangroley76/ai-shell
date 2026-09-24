@@ -20,6 +20,26 @@ fn os_hint() -> &'static str {
     }
 }
 
+// 探测本机主 IP 与所在 /24 网段(UDP connect 只选路由、不真发包),注入上下文
+// 让网络命令用真实网段而非猜测的 192.168.1.x
+fn net_hint() -> String {
+    let ip = std::net::UdpSocket::bind("0.0.0.0:0")
+        .and_then(|s| {
+            s.connect("8.8.8.8:80")?;
+            s.local_addr()
+        })
+        .map(|a| a.ip().to_string())
+        .unwrap_or_default();
+    if ip.is_empty() || ip.starts_with("0.") || ip == "127.0.0.1" {
+        return String::new();
+    }
+    let subnet = ip
+        .rsplit_once('.')
+        .map(|(pre, _)| format!("{pre}.0/24"))
+        .unwrap_or_default();
+    format!(" This machine's primary IP is {ip}, LAN subnet {subnet} — use this real subnet/IP for network commands (e.g. scanning), do NOT guess 192.168.1.x.")
+}
+
 // 意图路由系统提示词(本地云端共用)。{OS} 运行时替换为真实系统。
 const SYS_SHELL: &str = "你是命令行学习助手,当前系统环境:{OS}。生成命令必须适配该系统(例如 macOS 没有 ip/free 等 Linux 专属命令,要用该系统实际存在的命令)。判断用户意图,按格式输出(必须以标记开头):\n【A. 执行某个具体操作】输出两行:\nCMD: <一条shell命令>\nDESC: <一句话说明这条命令做什么>\n规则:遍历文件系统的命令(find/du/grep -r/ls -R)后跟 2>/dev/null;当前目录用 . ;未明确递归时find加-maxdepth 1;分清文件与目录;破坏性操作选最保守写法。\n【B. 想了解某命令用法/参数】(如\"tar怎么用\")输出:HELP: <命令名>\n【C. 询问\"有哪些命令/工具\"、\"什么是X\"、概念定义等一般知识】——问\"哪些命令/什么工具\"是了解有哪些工具不是查找文件!\"什么是/解释概念\"要直接讲解!输出:ANSWER: <回答;若问工具则列举相关命令及用途>\n【无法判断】输出:CLARIFY: <原因>\n语言:DESC、ANSWER、CLARIFY 的内容用与用户提问相同的语言(用户用英文就用英文)。\n严格:只以 CMD:/HELP:/ANSWER:/CLARIFY: 之一开头;CMD必跟一行DESC;不要思考过程、不要markdown。";
 
@@ -681,7 +701,8 @@ fn process(input: &str, cfg: &HashMap<String, String>, dry: bool, context: &str)
         },
         backend_name(cfg)
     );
-    let raw = match call(&SYS_SHELL.replace("{OS}", os_hint()), &query, cfg) {
+    let env_ctx = format!("{}{}", os_hint(), net_hint());
+    let raw = match call(&SYS_SHELL.replace("{OS}", &env_ctx), &query, cfg) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("{e}");
