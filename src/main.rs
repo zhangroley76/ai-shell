@@ -487,8 +487,132 @@ fn do_help(name: &str, ask: &str, cfg: &HashMap<String, String>) {
     print_colored(expl.trim());
 }
 
+// 检测"列出本机某类命令/工具"意图(如"列出网络相关命令""有哪些压缩工具")
+fn is_list_installed(input: &str) -> bool {
+    let has_list = [
+        "列出",
+        "有哪些",
+        "哪些命令",
+        "哪些工具",
+        "相关的命令",
+        "相关命令",
+        "list ",
+        "what ",
+        "which ",
+    ]
+    .iter()
+    .any(|k| input.contains(k));
+    let has_cmd = ["命令", "工具", "command", "tool", "util", "program"]
+        .iter()
+        .any(|k| input.to_lowercase().contains(k) || input.contains(k));
+    has_list && has_cmd
+}
+
+// 扫描 $PATH,返回本机真实安装的所有可执行命令名(去重排序)
+fn installed_commands() -> Vec<String> {
+    let mut set = std::collections::BTreeSet::new();
+    if let Ok(path) = std::env::var("PATH") {
+        for dir in path.split(':') {
+            if dir.is_empty() {
+                continue;
+            }
+            if let Ok(rd) = std::fs::read_dir(dir) {
+                for e in rd.flatten() {
+                    if let Ok(name) = e.file_name().into_string() {
+                        // 跳过明显非命令的
+                        if !name.starts_with('.') && !name.contains(' ') {
+                            set.insert(name);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    set.into_iter().collect()
+}
+
+// 用 apropos(man 数据库)按关键词查真实安装的 CLI 命令(只取第1、8段),返回 "cmd - desc" 行
+fn apropos_commands(keyword: &str) -> Vec<String> {
+    let kw: String = keyword
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+        .collect();
+    if kw.is_empty() {
+        return Vec::new();
+    }
+    let out = Command::new("apropos").arg(&kw).output().ok();
+    let text = out
+        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+        .unwrap_or_default();
+    text.lines()
+        .filter(|l| l.contains("(1)") || l.contains("(8)")) // 只取用户/管理员命令
+        .map(|l| {
+            // "cmd (1) - desc" → "cmd - desc"
+            let cleaned = l.replacen(" (1)", "", 1).replacen(" (8)", "", 1);
+            cleaned.trim().to_string()
+        })
+        .take(60)
+        .collect()
+}
+
+// "列出本机某类命令"流程:模型提关键词 → apropos 查真实命令 → 模型格式化/翻译
+fn do_list_installed(input: &str, cfg: &HashMap<String, String>) {
+    let zh = is_cjk(input);
+    eprintln!(
+        "{}",
+        if zh {
+            "🔎 查询本机已安装的相关命令..."
+        } else {
+            "🔎 Finding installed commands on this machine..."
+        }
+    );
+    let sys = "You are a command-line assistant. No thinking, no reasoning aloud.";
+    // 1) 提取一个英文主题关键词(apropos 搜英文 man 描述)
+    let kw = call(
+        sys,
+        &format!("Output ONE lowercase English keyword naming the topic of this request, nothing else (e.g. network, compression, disk): {input}"),
+    cfg).unwrap_or_default();
+    let kw = kw.split_whitespace().next().unwrap_or("").to_string();
+
+    // 2) apropos 查真实安装的相关命令
+    let hits = apropos_commands(&kw);
+
+    let d = lang_directive(input);
+    let prompt = if hits.is_empty() {
+        // 回退:apropos 无结果(如无 man 数据库),扫 PATH 按关键词粗筛
+        let cmds = installed_commands();
+        let filtered: Vec<String> = cmds
+            .iter()
+            .filter(|c| c.contains(&kw) || kw.is_empty())
+            .take(400)
+            .cloned()
+            .collect();
+        format!(
+            "{d}These commands are installed on this machine (from $PATH): {}\n\nFrom THIS list only, pick the ones relevant to the request and describe each briefly (one per line). Request: {input}",
+            filtered.join(" ")
+        )
+    } else {
+        format!(
+            "{d}Below are commands ACTUALLY INSTALLED on this machine relevant to \"{kw}\" (from `apropos`), with their real descriptions:\n{}\n\nPresent the ones relevant to the user's request as a clean list (one per line: command — short purpose). Keep only genuinely relevant ones; do not invent commands. Request: {input}",
+            hits.join("\n")
+        )
+    };
+    match call(sys, &prompt, cfg) {
+        Ok(out) => {
+            println!();
+            print_colored(out.trim());
+        }
+        Err(e) => eprintln!("{e}"),
+    }
+}
+
 fn process(input: &str, cfg: &HashMap<String, String>, dry: bool, context: &str) {
     let zh = is_cjk(input);
+    // 工具端识别"列出本机某类命令"→ 基于真实安装的程序列表筛选(而非凭记忆)
+    if is_list_installed(input) {
+        do_list_installed(input, cfg);
+        return;
+    }
     // 优先工具端识别"解释命令"意图,直接拆解,不经模型路由(更稳)
     if let Some(target) = explain_target(input) {
         eprintln!(
