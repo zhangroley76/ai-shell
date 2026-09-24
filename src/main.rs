@@ -237,6 +237,10 @@ fn call(system: &str, user: &str, cfg: &HashMap<String, String>) -> Result<Strin
         }
         out = out.trim_end_matches("```").trim().to_string();
     }
+    // 规范化标记的全角冒号(中文模型常输出 CMD:/DESC: 用全角:)
+    for m in ["CMD", "DESC", "ANSWER", "HELP", "EXPLAIN", "CLARIFY"] {
+        out = out.replace(&format!("{m}\u{ff1a}"), &format!("{m}:"));
+    }
     Ok(out.trim().to_string())
 }
 
