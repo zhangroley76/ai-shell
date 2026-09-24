@@ -136,12 +136,24 @@ fn call_cli(tool: &str, system: &str, user: &str) -> Result<String, String> {
     } else {
         format!("{system}\n\n{user}")
     };
-    let output = match tool {
-        "claude" => Command::new("claude").arg("-p").arg(&full).output(),
-        "codex" => Command::new("codex").arg("exec").arg(&full).output(),
-        _ => return Err("未知CLI".into()),
-    }
-    .map_err(|e| format!("调用 {tool} 失败: {e}"))?;
+    // 喂空 stdin:避免 claude/codex 等待 stdin(3秒警告 + 污染输出)
+    let mut c = match tool {
+        "claude" => {
+            let mut c = Command::new("claude");
+            c.arg("-p").arg(&full);
+            c
+        }
+        "codex" => {
+            let mut c = Command::new("codex");
+            c.arg("exec").arg(&full);
+            c
+        }
+        _ => return Err("unknown CLI".into()),
+    };
+    let output = c
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map_err(|e| format!("failed to run {tool}: {e}"))?;
     let raw = String::from_utf8_lossy(&output.stdout);
     if tool == "codex" {
         // 过滤 codex 的 hook/tokens/codex 等噪音行,取实质内容
