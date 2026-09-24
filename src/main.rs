@@ -11,10 +11,19 @@ use std::process::Command;
 const LOCAL_BASE: &str = "qwen3:14b"; // 本地基础模型(内联system)
 const ENDPOINT_DEFAULT: &str = "http://127.0.0.1:11434";
 
-// 意图路由系统提示词(本地云端共用)
-const SYS_SHELL: &str = "你是 Linux 命令行学习助手,环境:Arch Linux + zsh。判断用户意图,按格式输出(必须以标记开头):\n【A. 执行某个具体操作】输出两行:\nCMD: <一条shell命令>\nDESC: <一句话说明这条命令做什么>\n规则:遍历文件系统的命令(find/du/grep -r/ls -R)后跟 2>/dev/null;当前目录用 . ;未明确递归时find加-maxdepth 1;在家目录查找时排除噪音目录(-not -path '*/.local/share/Trash/*' -not -path '*/.cache/*' -not -path '*/repos/*');分清文件与目录;破坏性操作选最保守写法。\n【B. 想了解某命令用法/参数】(如\"tar怎么用\")输出:HELP: <命令名>\n【C. 询问\"有哪些命令/工具\"、\"什么是X\"、概念定义等一般知识】——问\"哪些命令/什么工具\"是了解有哪些工具不是查找文件!\"什么是/解释概念\"要直接讲解!输出:ANSWER: <回答;若问工具则列举相关命令及用途>\n【无法判断】输出:CLARIFY: <原因>\n语言:DESC、ANSWER、CLARIFY 的内容用与用户提问相同的语言(用户用英文就用英文)。\n严格:只以 CMD:/HELP:/ANSWER:/CLARIFY: 之一开头;CMD必跟一行DESC;不要思考过程、不要markdown。";
+// 运行时检测真实系统环境(避免在 macOS 上生成 Linux 专属命令如 ip)
+fn os_hint() -> &'static str {
+    match std::env::consts::OS {
+        "macos" => "macOS (BSD userland: use ifconfig/route/networksetup/dscacheutil, NOT the Linux `ip`; BSD flags differ from GNU, e.g. sed -i '' / stat -f)",
+        "linux" => "Linux (GNU userland)",
+        other => other,
+    }
+}
 
-const SYS_SCRIPT: &str = "你是 Bash 脚本生成助手,环境:Arch Linux + bash。根据需求生成完整健壮的脚本。硬性规则:1.首行 #!/usr/bin/env bash,次行 set -euo pipefail;2.所有变量引用加双引号;3.破坏性操作前校验目标非空、路径存在、非根目录,删除类默认用echo打印(dry-run),注释说明取消注释才真删;4.参数不足时打印用法并退出;5.关键步骤加简短注释(用与用户需求相同的语言);6.只输出脚本代码,不要markdown标记、不要解释、不要思考过程。";
+// 意图路由系统提示词(本地云端共用)。{OS} 运行时替换为真实系统。
+const SYS_SHELL: &str = "你是命令行学习助手,当前系统环境:{OS}。生成命令必须适配该系统(例如 macOS 没有 ip/free 等 Linux 专属命令,要用该系统实际存在的命令)。判断用户意图,按格式输出(必须以标记开头):\n【A. 执行某个具体操作】输出两行:\nCMD: <一条shell命令>\nDESC: <一句话说明这条命令做什么>\n规则:遍历文件系统的命令(find/du/grep -r/ls -R)后跟 2>/dev/null;当前目录用 . ;未明确递归时find加-maxdepth 1;分清文件与目录;破坏性操作选最保守写法。\n【B. 想了解某命令用法/参数】(如\"tar怎么用\")输出:HELP: <命令名>\n【C. 询问\"有哪些命令/工具\"、\"什么是X\"、概念定义等一般知识】——问\"哪些命令/什么工具\"是了解有哪些工具不是查找文件!\"什么是/解释概念\"要直接讲解!输出:ANSWER: <回答;若问工具则列举相关命令及用途>\n【无法判断】输出:CLARIFY: <原因>\n语言:DESC、ANSWER、CLARIFY 的内容用与用户提问相同的语言(用户用英文就用英文)。\n严格:只以 CMD:/HELP:/ANSWER:/CLARIFY: 之一开头;CMD必跟一行DESC;不要思考过程、不要markdown。";
+
+const SYS_SCRIPT: &str = "你是脚本生成助手,当前系统环境:{OS}。生成的脚本必须适配该系统。硬性规则:1.首行 #!/usr/bin/env bash,次行 set -euo pipefail;2.所有变量引用加双引号;3.破坏性操作前校验目标非空、路径存在、非根目录,删除类默认用echo打印(dry-run),注释说明取消注释才真删;4.参数不足时打印用法并退出;5.关键步骤加简短注释(用与用户需求相同的语言);6.只输出脚本代码,不要markdown标记、不要解释、不要思考过程。";
 
 const DANGER: &[(&str, &str)] = &[
     ("rm -rf /", "递归删除根目录"),
@@ -113,10 +122,10 @@ fn backend_name(cfg: &HashMap<String, String>) -> String {
         "claude" => "Claude CLI".into(),
         "codex" => "Codex CLI".into(),
         "cloud" => format!(
-            "云端 {}",
+            "cloud {}",
             cfg.get("cloud_model").map(|s| s.as_str()).unwrap_or("?")
         ),
-        _ => format!("本地 {LOCAL_BASE}"),
+        _ => format!("local {LOCAL_BASE}"),
     }
 }
 
@@ -458,26 +467,43 @@ fn lang_directive(ask: &str) -> &'static str {
 }
 
 fn do_help(name: &str, ask: &str, cfg: &HashMap<String, String>) {
-    eprintln!("📖 读取 {name} 的帮助文档...");
+    let zh = is_cjk(ask);
+    eprintln!(
+        "{} {name}{}",
+        if zh {
+            "📖 读取"
+        } else {
+            "📖 Reading --help of"
+        },
+        if zh { " 的帮助文档..." } else { "..." }
+    );
     let sys = "You are a Linux command assistant. No thinking, no reasoning aloud.";
     let d = lang_directive(ask);
     let expl = match fetch_help(name) {
         Some(h) => call(sys, &format!("{d}Below is the real --help of `{name}`. Concisely explain what it does and its common options (one option per line with meaning), then give 1-2 usage examples. Wrap command examples in backticks. Keep it focused.\n\n{h}"), cfg),
         None => call(sys, &format!("{d}Concisely explain the `{name}` command: what it does, common options, and 1-2 examples. Wrap command examples in backticks."), cfg),
-    }.unwrap_or_else(|e| format!("(explain failed: {e})"));
+    }.unwrap_or_else(|e| format!("(failed: {e})"));
     println!();
     print_colored(expl.trim());
 }
 
 fn process(input: &str, cfg: &HashMap<String, String>, dry: bool, context: &str) {
+    let zh = is_cjk(input);
     // 优先工具端识别"解释命令"意图,直接拆解,不经模型路由(更稳)
     if let Some(target) = explain_target(input) {
-        eprintln!("🔍 拆解命令...");
+        eprintln!(
+            "{}",
+            if zh {
+                "🔍 拆解命令..."
+            } else {
+                "🔍 Breaking down the command..."
+            }
+        );
         let help = fetch_help(&target)
             .map(|h| format!("\n(参考首个命令的帮助文档:\n{h}\n)"))
             .unwrap_or_default();
         let expl = call("You are a Linux assistant. No thinking aloud.", &format!("{}Break down and explain each part of this Linux command for a beginner. End with a one-line summary of what the whole command does. Wrap command fragments in backticks.\n\nCommand: {target}{help}", lang_directive(&target)), cfg)
-            .unwrap_or_else(|e| format!("(拆解失败: {e})"));
+            .unwrap_or_else(|e| format!("(failed: {e})"));
         println!();
         print_colored(expl.trim());
         return;
@@ -491,10 +517,25 @@ fn process(input: &str, cfg: &HashMap<String, String>, dry: bool, context: &str)
     let query = if context.is_empty() {
         input.to_string()
     } else {
-        format!("{context}\n当前问题:{input}")
+        format!(
+            "{context}\n{}: {input}",
+            if zh {
+                "当前问题"
+            } else {
+                "Current question"
+            }
+        )
     };
-    eprintln!("🤔 思考中({})...", backend_name(cfg));
-    let raw = match call(SYS_SHELL, &query, cfg) {
+    eprintln!(
+        "{} ({})...",
+        if zh {
+            "🤔 思考中"
+        } else {
+            "🤔 Thinking"
+        },
+        backend_name(cfg)
+    );
+    let raw = match call(&SYS_SHELL.replace("{OS}", os_hint()), &query, cfg) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("{e}");
@@ -514,18 +555,33 @@ fn process(input: &str, cfg: &HashMap<String, String>, dry: bool, context: &str)
     }
     if let Some(c) = raw.strip_prefix("EXPLAIN:") {
         let target = c.trim();
-        eprintln!("🔍 拆解命令...");
+        eprintln!(
+            "{}",
+            if zh {
+                "🔍 拆解命令..."
+            } else {
+                "🔍 Breaking down the command..."
+            }
+        );
         let help = fetch_help(target)
             .map(|h| format!("\n(参考首个命令的帮助文档:\n{h}\n)"))
             .unwrap_or_default();
         let expl = call("You are a Linux assistant. No thinking aloud.", &format!("{}Break down and explain each part of this Linux command for a beginner. End with a one-line summary of what the whole command does. Wrap command fragments in backticks.\n\nCommand: {target}{help}", lang_directive(target)), cfg)
-            .unwrap_or_else(|e| format!("(拆解失败: {e})"));
+            .unwrap_or_else(|e| format!("(failed: {e})"));
         println!();
         print_colored(expl.trim());
         return;
     }
     if let Some(c) = raw.strip_prefix("CLARIFY:") {
-        println!("\n\x1b[1;33m⚠️  需要澄清:\x1b[0m{}", c.trim());
+        println!(
+            "\n\x1b[1;33m⚠️  {}\x1b[0m{}",
+            if zh {
+                "需要澄清:"
+            } else {
+                "Need clarification: "
+            },
+            c.trim()
+        );
         return;
     }
 
@@ -557,9 +613,16 @@ fn process(input: &str, cfg: &HashMap<String, String>, dry: bool, context: &str)
             .to_string();
     }
 
-    println!("\n\x1b[1;36m建议命令:\x1b[0m\n  {cmd}");
+    println!(
+        "\n\x1b[1;36m{}\x1b[0m\n  {cmd}",
+        if zh {
+            "建议命令:"
+        } else {
+            "Suggested command:"
+        }
+    );
     if !desc.is_empty() {
-        println!("\x1b[2m  作用:{desc}\x1b[0m");
+        println!("\x1b[2m  {}{desc}\x1b[0m", if zh { "作用:" } else { "⤷ " });
     } // 浅色作用说明
     println!();
     if dry {
@@ -581,35 +644,72 @@ fn process(input: &str, cfg: &HashMap<String, String>, dry: bool, context: &str)
     };
     let mut final_cmd = cmd.clone();
     if !danger.is_empty() {
-        println!("\x1b[1;41m 危险操作警告 \x1b[0m 匹配到高危模式:");
+        println!(
+            "\x1b[1;41m {} \x1b[0m {}",
+            if zh { "危险操作警告" } else { "DANGER" },
+            if zh {
+                "匹配到高危模式:"
+            } else {
+                "matches a high-risk pattern:"
+            }
+        );
         for d in &danger {
             println!("  ⚠️  {d}");
         }
-        if prompt("\n确认执行?必须输入 yes(其它取消): ") != "yes" {
-            println!("已取消。");
+        if prompt(if zh {
+            "\n确认执行?必须输入 yes(其它取消): "
+        } else {
+            "\nConfirm? type the full word yes (anything else cancels): "
+        }) != "yes"
+        {
+            println!("{}", if zh { "已取消。" } else { "Cancelled." });
             return;
         }
     } else if needs_sudo {
-        println!("\x1b[1;33m⚠️  该命令使用 sudo,将以管理员权限修改系统。\x1b[0m");
-        let a = prompt("确认执行?输入 y 或 yes(e 编辑 / 其它取消): ").to_lowercase();
+        println!(
+            "\x1b[1;33m⚠️  {}\x1b[0m",
+            if zh {
+                "该命令使用 sudo,将以管理员权限修改系统。"
+            } else {
+                "This command uses sudo and will modify the system as root."
+            }
+        );
+        let a = prompt(if zh {
+            "确认执行?输入 y 或 yes(e 编辑 / 其它取消): "
+        } else {
+            "Confirm? type y or yes (e to edit / anything else cancels): "
+        })
+        .to_lowercase();
         if a == "e" {
-            let ed = prompt("编辑命令: ");
+            let ed = prompt(if zh {
+                "编辑命令: "
+            } else {
+                "Edit command: "
+            });
             if !ed.is_empty() {
                 final_cmd = ed;
             }
         } else if a != "y" && a != "yes" {
-            println!("已取消。");
+            println!("{}", if zh { "已取消。" } else { "Cancelled." });
             return;
         }
     } else {
-        let a = prompt("回车执行 / e 编辑 / 其它键取消: ");
+        let a = prompt(if zh {
+            "回车执行 / e 编辑 / 其它键取消: "
+        } else {
+            "Enter to run / e to edit / any key cancels: "
+        });
         if a == "e" {
-            let ed = prompt("编辑命令: ");
+            let ed = prompt(if zh {
+                "编辑命令: "
+            } else {
+                "Edit command: "
+            });
             if !ed.is_empty() {
                 final_cmd = ed;
             }
         } else if !a.is_empty() {
-            println!("已取消。");
+            println!("{}", if zh { "已取消。" } else { "Cancelled." });
             return;
         }
     }
@@ -619,8 +719,16 @@ fn process(input: &str, cfg: &HashMap<String, String>, dry: bool, context: &str)
 
 // 生成脚本:role-script 生成 → shellcheck 静态检查 → 展示 → 存文件(不自动执行)
 fn gen_script(desc: &str, cfg: &HashMap<String, String>) {
-    eprintln!("🛠  生成脚本中...");
-    let mut script = match call(SYS_SCRIPT, desc, cfg) {
+    let zh = is_cjk(desc);
+    eprintln!(
+        "{}",
+        if zh {
+            "🛠  生成脚本中..."
+        } else {
+            "🛠  Generating script..."
+        }
+    );
+    let mut script = match call(&SYS_SCRIPT.replace("{OS}", os_hint()), desc, cfg) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("{e}");
@@ -637,13 +745,27 @@ fn gen_script(desc: &str, cfg: &HashMap<String, String>) {
             .trim()
             .to_string();
     }
-    println!("\n\x1b[1;36m生成的脚本:\x1b[0m");
+    println!(
+        "\n\x1b[1;36m{}\x1b[0m",
+        if zh {
+            "生成的脚本:"
+        } else {
+            "Generated script:"
+        }
+    );
     println!("\x1b[2m{}\x1b[0m", "─".repeat(50));
     print_colored(&script);
     println!("\x1b[2m{}\x1b[0m", "─".repeat(50));
 
     // shellcheck 静态检查
-    eprintln!("\n🔍 shellcheck 静态检查...");
+    eprintln!(
+        "\n{}",
+        if zh {
+            "🔍 shellcheck 静态检查..."
+        } else {
+            "🔍 shellcheck static analysis..."
+        }
+    );
     let mut tmp = std::env::temp_dir();
     tmp.push(format!("ai_script_{}.sh", std::process::id()));
     let _ = std::fs::write(&tmp, &script);
@@ -657,7 +779,14 @@ fn gen_script(desc: &str, cfg: &HashMap<String, String>) {
             println!("\x1b[1;32m✓ shellcheck 未发现 warning 级以上问题\x1b[0m")
         }
         Ok(out) => {
-            println!("\x1b[1;33m⚠ shellcheck 提示:\x1b[0m");
+            println!(
+                "\x1b[1;33m⚠ {}\x1b[0m",
+                if zh {
+                    "shellcheck 提示:"
+                } else {
+                    "shellcheck notes:"
+                }
+            );
             print!("{}", String::from_utf8_lossy(&out.stdout));
         }
         Err(_) => println!("(shellcheck 未安装,跳过检查)"),
@@ -702,22 +831,40 @@ fn gen_script(desc: &str, cfg: &HashMap<String, String>) {
         }
     }
     if !risks.is_empty() {
-        println!("\n\x1b[1;41m 安全锁:脚本含破坏性命令 \x1b[0m");
+        println!(
+            "\n\x1b[1;41m {} \x1b[0m",
+            if zh {
+                "安全锁:脚本含破坏性命令"
+            } else {
+                "SAFETY LOCK: script contains destructive commands"
+            }
+        );
         for r in &risks {
             println!("\x1b[1;33m{r}\x1b[0m");
         }
-        println!("\x1b[2m  提示:删除/移动类操作请务必先看清路径变量、先跑 dry-run 验证。\x1b[0m");
+        println!(
+            "\x1b[2m  {}\x1b[0m",
+            if zh {
+                "提示:删除/移动类操作请务必先看清路径变量、先跑 dry-run 验证。"
+            } else {
+                "Tip: check path variables and dry-run before enabling deletes/moves."
+            }
+        );
         let ans =
             prompt("\n确认这些命令没问题?输入 y 或 yes 继续保存(其它键放弃): ").to_lowercase();
         if ans != "y" && ans != "yes" {
             let _ = std::fs::remove_file(&tmp);
-            println!("已放弃保存。");
+            println!("{}", if zh { "已放弃保存。" } else { "Aborted." });
             return;
         }
     }
 
     // 存文件(不执行)
-    let raw_path = prompt("\n保存到文件路径(回车放弃保存): ");
+    let raw_path = prompt(if zh {
+        "\n保存到文件路径(回车放弃保存): "
+    } else {
+        "\nSave to path (Enter to skip): "
+    });
     // 展开 ~ / ~/ 到家目录(shell才会展开,程序需自己处理)
     let path = if raw_path == "~" {
         std::env::var("HOME").unwrap_or(raw_path.clone())
@@ -728,44 +875,65 @@ fn gen_script(desc: &str, cfg: &HashMap<String, String>) {
     };
     if raw_path.is_empty() {
         let _ = std::fs::remove_file(&tmp);
-        println!("未保存。");
+        println!("{}", if zh { "未保存。" } else { "Not saved." });
     } else {
         match std::fs::copy(&tmp, &path) {
             Ok(_) => {
                 let _ = Command::new("chmod").arg("+x").arg(&path).status();
                 let _ = std::fs::remove_file(&tmp);
-                println!("\x1b[1;32m✓ 已保存到 {path}(已加执行权限)\x1b[0m");
-                println!("\x1b[2m  运行前请先自己过一遍;删除类脚本默认dry-run,确认无误再按注释启用真正删除。\x1b[0m");
+                println!(
+                    "\x1b[1;32m✓ {}{path}\x1b[0m",
+                    if zh { "已保存到 " } else { "Saved to " }
+                );
+                println!(
+                    "\x1b[2m  {}\x1b[0m",
+                    if zh {
+                        "运行前请先自己过一遍;删除类脚本默认dry-run,确认无误再按注释启用真正删除。"
+                    } else {
+                        "Review it before running; deletes are dry-run by default (uncomment to enable)."
+                    }
+                );
             }
-            Err(e) => println!("保存失败: {e}"),
+            Err(e) => println!("{}: {e}", if zh { "保存失败" } else { "Save failed" }),
         }
     }
 }
 
 fn print_help() {
     println!(
-        "\x1b[1;36mai\x1b[0m (ai-shell) v{} — Linux 命令行学习助手(本地模型驱动)\n",
+        "\x1b[1;36mai\x1b[0m (ai-shell) v{} — natural-language Linux command assistant (local-first)\n",
         env!("CARGO_PKG_VERSION")
     );
-    println!("\x1b[1m用法:\x1b[0m");
-    println!("  ai \"<自然语言>\"          自动判断意图:生成命令 / 讲解 / 拆解 / 答疑");
-    println!("  ai script \"<描述>\"        生成 bash 脚本(shellcheck+安全锁,不自动执行)");
-    println!("  ai -i                     交互学习模式(可连续追问,exit 退出)");
-    println!("  ai --dry \"<...>\"          只生成命令,不执行");
-    println!("  ai -h | --help            显示本帮助\n");
-    println!("\x1b[1m后端选择(默认本地,可临时切换):\x1b[0m");
-    println!("  --local   本地 Ollama(免费/私密)   --cloud   云端API(需配key)");
-    println!("  --claude  本地 Claude CLI(质量高)  --codex   本地 Codex CLI");
-    println!("  \x1b[2m默认后端可在配置里设 backend=claude/codex/cloud/local\x1b[0m\n");
-    println!("\x1b[1m四种意图(自动识别,无需指定):\x1b[0m");
-    println!("  执行操作   \x1b[2m如\x1b[0m ai \"列出当前目录最大的文件\"   \x1b[2m→ 生成命令+作用说明,确认后执行\x1b[0m");
-    println!("  讲解命令   \x1b[2m如\x1b[0m ai \"tar 怎么用\"              \x1b[2m→ 读真实 --help 讲解\x1b[0m");
-    println!("  拆解命令   \x1b[2m如\x1b[0m ai \"解释这条命令 tar -xzvf a.tgz\"  \x1b[2m→ 逐段拆解含义\x1b[0m");
-    println!("  知识问答   \x1b[2m如\x1b[0m ai \"什么是 inode\" / \"有哪些pdf工具\"\n");
-    println!("\x1b[1m安全机制:\x1b[0m");
-    println!("  \x1b[2m命令三档确认:普通(回车)/ sudo(输y)/ 灾难级rm-rf等(必须输yes)\x1b[0m");
-    println!("  \x1b[2m脚本安全锁:含 rm/mv/dd 等破坏命令会红字警告并要确认才保存\x1b[0m\n");
-    println!("\x1b[1m配置:\x1b[0m ~/.config/ai/config  \x1b[2m(endpoint= 模型地址,可选 user=/password=)\x1b[0m");
+    println!("\x1b[1mUSAGE\x1b[0m");
+    println!("  ai \"<natural language>\"    auto-detects intent: generate / explain / break down / answer");
+    println!("  ai script \"<description>\"   generate a bash script (shellcheck + safety lock, never auto-runs)");
+    println!(
+        "  ai -i                       interactive learning mode (ask follow-ups; 'exit' to quit)"
+    );
+    println!("  ai --dry \"<...>\"            show the command, don't run it");
+    println!("  ai -h | --help              show this help    ai -V | --version");
+    println!();
+    println!("\x1b[1mBACKENDS\x1b[0m (default: local; override per call)");
+    println!(
+        "  --local   local Ollama (free/private)   --cloud   OpenAI-compatible API (needs key)"
+    );
+    println!("  --claude  Claude CLI (higher quality)   --codex   Codex CLI");
+    println!(
+        "  \x1b[2mset a default with 'backend = claude|codex|cloud|local' in the config\x1b[0m"
+    );
+    println!();
+    println!("\x1b[1mINTENTS\x1b[0m (auto-detected — no mode needed)");
+    println!("  generate   \x1b[2me.g.\x1b[0m ai \"list the largest files here\"     \x1b[2m→ command + description, confirm, run\x1b[0m");
+    println!("  explain    \x1b[2me.g.\x1b[0m ai \"how do I use tar\"               \x1b[2m→ reads real --help\x1b[0m");
+    println!("  break down \x1b[2me.g.\x1b[0m ai \"explain this command: tar -xzvf a.tgz\"  \x1b[2m→ piece by piece\x1b[0m");
+    println!("  answer     \x1b[2me.g.\x1b[0m ai \"what is an inode\"");
+    println!();
+    println!("\x1b[1mSAFETY\x1b[0m");
+    println!("  \x1b[2mcommands: normal (Enter) / sudo (type y) / catastrophic like rm -rf (must type yes)\x1b[0m");
+    println!("  \x1b[2mscripts: destructive commands (rm/mv/dd) trigger a warning; must confirm to save\x1b[0m");
+    println!();
+    println!("\x1b[1mCONFIG\x1b[0m ~/.config/ai/config  \x1b[2m(endpoint=, backend=, optional cloud_url=/cloud_key=)\x1b[0m");
+    println!("  \x1b[2mfollows your question's language — ask in English, get English; ask in Chinese, get Chinese\x1b[0m");
 }
 
 fn main() {
