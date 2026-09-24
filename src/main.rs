@@ -1,5 +1,5 @@
 // ai-shell — a local-first, privacy-friendly natural-language Linux command assistant.
-// https://github.com/YOUR_USERNAME/ai-shell   MIT License
+// https://github.com/zhangroley76/ai-shell   MIT License
 //
 // Intents (auto-detected): generate a command / explain a command (reads real --help) /
 // break a command down / answer a concept. Commands run locally; only inference is remote.

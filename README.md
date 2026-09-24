@@ -46,7 +46,7 @@ It's not just a command generator — it's a **learning tool**. It reads the *re
 Requires a [Rust toolchain](https://rustup.rs) (`cargo`).
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/ai-shell.git
+git clone https://github.com/zhangroley76/ai-shell.git
 cd ai-shell
 cargo build --release
 # put it on your PATH

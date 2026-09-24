@@ -46,7 +46,7 @@
 需要 [Rust 工具链](https://rustup.rs)(`cargo`)。
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/ai-shell.git
+git clone https://github.com/zhangroley76/ai-shell.git
 cd ai-shell
 cargo build --release
 install -Dm755 target/release/ai ~/.local/bin/ai
